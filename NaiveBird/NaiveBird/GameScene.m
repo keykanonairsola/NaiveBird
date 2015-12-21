@@ -15,7 +15,12 @@
 #define SCREEN_WIDTH ([UIScreen mainScreen].bounds.size.width)
 #define SCREEN_HEIGHT ([UIScreen mainScreen].bounds.size.height)
 
-static NSInteger const pipGap = 100;
+#define PIPEGAP 350
+
+static const uint32_t birdCategory = 1 << 0;
+static const uint32_t worldCategory = 1 << 1;
+static const uint32_t pipeCategory = 1 << 2;
+static const uint32_t scoreCategory = 1 << 3;
 
 /*
 
@@ -87,20 +92,65 @@ static NSInteger const pipGap = 100;
 
 -(void)didMoveToView:(SKView *)view {
     /* Setup your scene here */
+    //initial restart
+    self.restart = NO;
+    
+    //initial life
+    self.life = 3;
+    
+    //life texture
+    SKTexture* lifeTexture = [SKTexture textureWithImageNamed:@"heart"];
+    SKSpriteNode* lifeNodes = [SKSpriteNode spriteNodeWithTexture:lifeTexture];
+    [lifeNodes setScale:2.0];
+    lifeNodes.position = CGPointMake(lifeNodes.size.width+300, self.frame.size.height - lifeNodes.size.height);
+        
+    [self addChild:lifeNodes];
+    
+    self.lifeLabel = [SKLabelNode labelNodeWithFontNamed: @"MarkerFelt-Wide"];
+    self.lifeLabel.position = CGPointMake( lifeNodes.position.x + 50, self.frame.size.height - lifeNodes.size.height);
+    self.lifeLabel.zPosition = 100;
+    self.lifeLabel.text = [NSString stringWithFormat:@"%ld",self.life];
+    [self addChild: self.lifeLabel];
+
+    
+    
+    
+    //initial moving
+    self.moving = [SKNode node];
+    [self addChild: self.moving];
+    
+    //initial pipes
+    self.pipes = [SKNode node];
+    [self.moving addChild:self.pipes];
+    
+    //set the fly speed
+    self.flySpeed = 0.008;
     
     //set the gravity
-    self.physicsWorld.gravity = CGVectorMake(0.0, -1.0);
+    self.physicsWorld.gravity = CGVectorMake(0.0, -8.0);
+    
+    self.physicsWorld.contactDelegate = self;
     
     /* sky color  */
     self.skyColor = [SKColor colorWithRed:113.0/255.0 green:197.0/255.0 blue:207.0/255.0 alpha:1.0];
     [self setBackgroundColor:self.skyColor];
         
     
+    //score part
+    self.score = 0;
+    self.scoreLabel = [SKLabelNode labelNodeWithFontNamed: @"MarkerFelt-Wide"];
+    self.scoreLabel.position = CGPointMake( CGRectGetMidX(self.frame), 3* self.frame.size.height / 4);
+    self.scoreLabel.zPosition = 100;
+    self.scoreLabel.text = [NSString stringWithFormat:@"%ld",self.score];
+    [self addChild: self.scoreLabel];
+    
+    
+    
     /*  ground  */
     SKTexture* ground = [SKTexture textureWithImageNamed:@"ground"];
     ground.filteringMode = SKTextureFilteringNearest;
         
-    SKAction* moveGroundSprite = [SKAction moveByX:-ground.size.width*2 y:0 duration:0.02 * ground.size.width*2];
+    SKAction* moveGroundSprite = [SKAction moveByX:-ground.size.width*2 y:0 duration:self.flySpeed * ground.size.width*2];
     SKAction* resetGroundSprite = [SKAction moveByX:ground.size.width*2 y:0 duration:0];
     SKAction* moveGroundSpritesForever = [SKAction repeatActionForever:[SKAction sequence:@[moveGroundSprite, resetGroundSprite]]];
         
@@ -111,7 +161,7 @@ static NSInteger const pipGap = 100;
         [sprite setScale: 2.0];
         sprite.position = CGPointMake(i* sprite.size.width, sprite.size.height/2);
         [sprite runAction:moveGroundSpritesForever];
-        [self addChild:sprite];
+        [self.moving addChild:sprite];
             
     }
        
@@ -130,22 +180,46 @@ static NSInteger const pipGap = 100;
     [self.bird setScale:2.0];
     self.bird.position = CGPointMake(self.frame.size.width / 2, CGRectGetMidY(self.frame)+10);
     [self.bird runAction: flap];
-        
+    
+    //set the bird's physics body
     self.bird.physicsBody = [SKPhysicsBody bodyWithCircleOfRadius:self.bird.size.height/2];
     self.bird.physicsBody.dynamic = YES;
     self.bird.physicsBody.allowsRotation = NO;
-        
+    
+    self.bird.physicsBody.categoryBitMask = birdCategory;
+    self.bird.physicsBody.collisionBitMask = worldCategory | pipeCategory;
+    self.bird.physicsBody.contactTestBitMask = worldCategory | pipeCategory;
+    
     [self addChild:self.bird];
         
     //create ground physics container
     SKNode* dummy = [SKNode node];
     dummy.position = CGPointMake(0,  ground.size.height);
     dummy.physicsBody =
-        [SKPhysicsBody bodyWithRectangleOfSize:CGSizeMake(self.frame.size.width, ground.size.height*2)];
+        [SKPhysicsBody bodyWithRectangleOfSize:CGSizeMake(self.frame.size.width, ground.size.height+25)];
     dummy.physicsBody.dynamic = NO;
+    
+    dummy.physicsBody.categoryBitMask = worldCategory;
+    
+    
     [self addChild:dummy];
     
     
+    //create pipes
+    SKAction* createPipes = [SKAction performSelector:@selector(createNewPipes) onTarget:self];
+    SKAction* delay = [SKAction waitForDuration:2.0];
+    SKAction* CreatePipesForever = [SKAction repeatActionForever:[SKAction sequence:@[createPipes,delay]]];
+    
+    [self runAction:CreatePipesForever];
+
+    
+}
+
+
+
+
+//this function is used to create pipe
+-(void)createNewPipes{
     //create pipes
     //pipe down
     self.pipe_down = [SKTexture textureWithImageNamed:@"pipe_down"];
@@ -159,13 +233,80 @@ static NSInteger const pipGap = 100;
     pipePair.zPosition = -10;
     
     //get a random float
-    CGFloat y = arc4random() %(NSInteger) (self.frame.size.height/3);
+    CGFloat y = arc4random() % (NSInteger) (self.frame.size.height/3);
     
-    SKSpriteNode* sprite_pipe_up = [SKSpriteNode spriteNodeWithTexture: self.pipe_down];
-    [sprite_pipe_up setScale: 2];
+    //pipe up sprite
+    SKSpriteNode* sprite_pipe_up = [SKSpriteNode spriteNodeWithTexture: self.pipe_up];
+    [sprite_pipe_up setScale: 2.0];
     sprite_pipe_up.position = CGPointMake(0, y);
     
+    //pipe up physics
+    sprite_pipe_up.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
+                                  CGSizeMake(self.pipe_up.size.width,self.pipe_up.size.height+150)];
+    sprite_pipe_up.physicsBody.dynamic = NO;
     
+    sprite_pipe_up.physicsBody.categoryBitMask = pipeCategory;
+    sprite_pipe_up.physicsBody.contactTestBitMask = birdCategory;
+    
+    [pipePair addChild:sprite_pipe_up];
+    
+    //pipe down sprite
+    SKSpriteNode* sprite_pipe_down = [SKSpriteNode spriteNodeWithTexture: self.pipe_down];
+    [sprite_pipe_down setScale:2.0];
+    sprite_pipe_down.position = CGPointMake(0, y + self.pipe_up.size.height + PIPEGAP);
+    
+    
+    //pipe down physics body
+    sprite_pipe_down.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
+                                    CGSizeMake(self.pipe_down.size.width,self.pipe_down.size.height+150)];
+    sprite_pipe_down.physicsBody.dynamic = NO;
+    
+    sprite_pipe_down.physicsBody.categoryBitMask = pipeCategory;
+    sprite_pipe_down.physicsBody.contactTestBitMask = birdCategory;
+    
+    [pipePair addChild:sprite_pipe_down];
+    
+    //pipe action
+    SKAction* pipePairMoveLeft = [SKAction repeatActionForever:[SKAction moveByX:-1 y:0 duration: self.flySpeed]];
+    SKAction* pipePairMoveLeftAndUp = [SKAction repeatActionForever:[SKAction moveByX:-1 y:0.3 duration: self.flySpeed]];
+    SKAction* pipePairMoveLeftAndDown = [SKAction repeatActionForever:[SKAction moveByX:-1 y:-0.3 duration:self.flySpeed]];
+    SKAction* pipeMove;
+    
+    switch (arc4random() % 3) {
+        case 0:
+            pipeMove = pipePairMoveLeft;
+            break;
+        case 1:
+            pipeMove = pipePairMoveLeftAndUp;
+            break;
+        case 2:
+            pipeMove = pipePairMoveLeftAndDown;
+            break;
+        default:
+            break;
+    }
+    
+    SKAction* pipeRemove = [SKAction removeFromParent];
+    
+    self.moveAndRemovePipes = [SKAction sequence:@[pipeMove,pipeRemove]];
+
+    
+    [pipePair runAction:self.moveAndRemovePipes];
+    
+    //contactNode
+    SKNode* contactNode = [SKNode node];
+    contactNode.position = CGPointMake( sprite_pipe_up.size.width + self.bird.size.width / 2 ,
+                                       CGRectGetMidY(self.frame));
+    contactNode.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
+                               CGSizeMake(sprite_pipe_down.size.width, self.frame.size.height)];
+    contactNode.physicsBody.dynamic = NO;
+    contactNode.physicsBody.categoryBitMask = scoreCategory;
+    contactNode.physicsBody.contactTestBitMask = birdCategory;
+    [pipePair addChild:contactNode];
+    
+    
+    
+    [self.pipes addChild:pipePair];
 }
 
 //set the bird head toward max and min
@@ -181,12 +322,60 @@ CGFloat setBirdHead(CGFloat min, CGFloat max, CGFloat value){
     }
 }
 
+//when physics body touch
+-(void)didBeginContact:(SKPhysicsContact* )contact {
+    if((contact.bodyA.categoryBitMask & scoreCategory) == scoreCategory ||
+       ((contact.bodyB.categoryBitMask & scoreCategory) == scoreCategory)){
+        self.score ++;
+        self.scoreLabel.text = [NSString stringWithFormat:@"%ld", self.score];
+    }
+    else{
+        self.life --;
+        self.lifeLabel.text = [NSString stringWithFormat:@"%ld", self.life];
+       // [self.lifeNodesArr removeObjectAtIndex:self.life];
+        if(self.life <= 0){
+            self.moving.speed = 0;
+            self.restart = YES;
+        }
+    }
+    
+    
+}
+
+-(void)resetScene{
+    //Move bird to original position
+    self.bird.position = CGPointMake(self.frame.size.width/2, CGRectGetMidY(self.frame));
+    //reset vector
+    self.bird.physicsBody.velocity = CGVectorMake(0, 0 );
+    
+    //remove all existing pipes
+    [self.pipes removeAllChildren];
+    
+    //reset life
+    self.life = 3;
+    self.lifeLabel.text = [NSString stringWithFormat:@"%ld",self.life];
+
+    //reset the restart flag
+    self.restart = NO;
+    
+    self.moving.speed = 1;
+    
+    //reset score
+    self.score = 0;
+    self.scoreLabel.text = [NSString stringWithFormat:@"%ld", self.score];
+}
+
 
 -(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
     /* Called when a touch begins */
     //when touch, bird fly
-    self.bird.physicsBody.velocity = CGVectorMake(0, 0);
-    [self.bird.physicsBody applyImpulse:CGVectorMake(0.0 , 20.0)];
+    if(self.moving.speed > 0){
+        self.bird.physicsBody.velocity = CGVectorMake(0, 0);
+        [self.bird.physicsBody applyImpulse:CGVectorMake(0.0 , 150.0)];
+    }else if(self.restart){
+
+        [self resetScene];
+    }
 }
 
 -(void)update:(CFTimeInterval)currentTime {
