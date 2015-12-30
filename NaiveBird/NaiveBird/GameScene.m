@@ -15,13 +15,14 @@
 #define SCREEN_WIDTH ([UIScreen mainScreen].bounds.size.width)
 #define SCREEN_HEIGHT ([UIScreen mainScreen].bounds.size.height)
 
-#define PIPEGAP 350
+#define PIPEGAP 400
 
 static const uint32_t birdCategory = 1 << 0;
 static const uint32_t worldCategory = 1 << 1;
 static const uint32_t pipeCategory = 1 << 2;
 static const uint32_t scoreCategory = 1 << 3;
-
+static const uint32_t drugCategory = 1 << 4;
+static const uint32_t medicineCategory = 1 << 5;
 /*
 
 
@@ -238,11 +239,11 @@ static const uint32_t scoreCategory = 1 << 3;
     //pipe up sprite
     SKSpriteNode* sprite_pipe_up = [SKSpriteNode spriteNodeWithTexture: self.pipe_up];
     [sprite_pipe_up setScale: 2.0];
-    sprite_pipe_up.position = CGPointMake(0, y);
+    sprite_pipe_up.position = CGPointMake(0,  y);
     
     //pipe up physics
     sprite_pipe_up.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
-                                  CGSizeMake(self.pipe_up.size.width,self.pipe_up.size.height+150)];
+                                  CGSizeMake(self.pipe_up.size.width,self.pipe_up.size.height+190)];
     sprite_pipe_up.physicsBody.dynamic = NO;
     
     sprite_pipe_up.physicsBody.categoryBitMask = pipeCategory;
@@ -250,31 +251,17 @@ static const uint32_t scoreCategory = 1 << 3;
     
     [pipePair addChild:sprite_pipe_up];
     
-    //pipe down sprite
-    SKSpriteNode* sprite_pipe_down = [SKSpriteNode spriteNodeWithTexture: self.pipe_down];
-    [sprite_pipe_down setScale:2.0];
-    sprite_pipe_down.position = CGPointMake(0, y + self.pipe_up.size.height + PIPEGAP);
-    
-    
-    //pipe down physics body
-    sprite_pipe_down.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
-                                    CGSizeMake(self.pipe_down.size.width,self.pipe_down.size.height+150)];
-    sprite_pipe_down.physicsBody.dynamic = NO;
-    
-    sprite_pipe_down.physicsBody.categoryBitMask = pipeCategory;
-    sprite_pipe_down.physicsBody.contactTestBitMask = birdCategory;
-    
-    [pipePair addChild:sprite_pipe_down];
-    
     //pipe action
     SKAction* pipePairMoveLeft = [SKAction repeatActionForever:[SKAction moveByX:-1 y:0 duration: self.flySpeed]];
-    SKAction* pipePairMoveLeftAndUp = [SKAction repeatActionForever:[SKAction moveByX:-1 y:0.3 duration: self.flySpeed]];
-    SKAction* pipePairMoveLeftAndDown = [SKAction repeatActionForever:[SKAction moveByX:-1 y:-0.3 duration:self.flySpeed]];
+    SKAction* pipePairMoveLeftAndUp = [SKAction repeatActionForever:[SKAction moveByX:-1 y:0.2 duration: self.flySpeed]];
+    SKAction* pipePairMoveLeftAndDown = [SKAction repeatActionForever:[SKAction moveByX:-1 y:-0.2 duration:self.flySpeed]];
     SKAction* pipeMove;
     
+    int drugTag = 2;
     switch (arc4random() % 3) {
         case 0:
             pipeMove = pipePairMoveLeft;
+            drugTag = 1;
             break;
         case 1:
             pipeMove = pipePairMoveLeftAndUp;
@@ -285,6 +272,27 @@ static const uint32_t scoreCategory = 1 << 3;
         default:
             break;
     }
+
+    
+    //pipe down sprite
+    SKSpriteNode* sprite_pipe_down = [SKSpriteNode spriteNodeWithTexture: self.pipe_down];
+    [sprite_pipe_down setScale:2.0];
+    if(drugTag == 1){
+        sprite_pipe_down.position = CGPointMake(0, y + self.pipe_up.size.height + PIPEGAP);
+    }else{
+        sprite_pipe_down.position = CGPointMake(0, y + self.pipe_up.size.height + PIPEGAP + 10);
+    }
+    
+    //pipe down physics body
+    sprite_pipe_down.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
+                                    CGSizeMake(self.pipe_down.size.width,self.pipe_down.size.height+190)];
+    sprite_pipe_down.physicsBody.dynamic = NO;
+    
+    sprite_pipe_down.physicsBody.categoryBitMask = pipeCategory;
+    sprite_pipe_down.physicsBody.contactTestBitMask = birdCategory;
+    
+    [pipePair addChild:sprite_pipe_down];
+    
     
     SKAction* pipeRemove = [SKAction removeFromParent];
     
@@ -292,6 +300,53 @@ static const uint32_t scoreCategory = 1 << 3;
 
     
     [pipePair runAction:self.moveAndRemovePipes];
+    
+    
+    //add medicine or drug
+    if(drugTag == 1){
+        switch(arc4random()% 6){
+            case 0:
+                drugTag = 0;
+                break;
+            case 1:
+            case 2:
+                drugTag = 1;
+                break;
+            default:
+                drugTag = 2;
+                break;
+                
+        }
+    }
+    
+    if(drugTag != 2){
+        SKTexture* drugTexture = [SKTexture textureWithImageNamed:@"heart"];
+        drugTexture.filteringMode = SKTextureFilteringNearest;
+  
+        self.drugSpriteNode = [SKSpriteNode spriteNodeWithTexture:drugTexture];
+        [self.drugSpriteNode setScale:2.0];
+    
+        //get a random float
+        CGFloat drugy = arc4random() % (NSInteger) (self.frame.size.height/2);
+        self.drugSpriteNode.position = CGPointMake(-100, 3*self.frame.size.height/4 - drugy);
+    
+        self.drugSpriteNode.physicsBody = [SKPhysicsBody bodyWithRectangleOfSize:
+                                  CGSizeMake(drugTexture.size.width,drugTexture.size.height)] ;
+    
+        
+        self.drugSpriteNode.physicsBody.dynamic = NO;
+    
+        self.drugSpriteNode.physicsBody.contactTestBitMask = birdCategory;
+        if(drugTag == 0){
+            self.drugSpriteNode.physicsBody.categoryBitMask = drugCategory;
+        }
+        else{
+            self.drugSpriteNode.physicsBody.categoryBitMask = medicineCategory;
+        }
+        
+        
+        [pipePair addChild:self.drugSpriteNode];
+    }
     
     //contactNode
     SKNode* contactNode = [SKNode node];
@@ -329,14 +384,28 @@ CGFloat setBirdHead(CGFloat min, CGFloat max, CGFloat value){
         self.score ++;
         self.scoreLabel.text = [NSString stringWithFormat:@"%ld", self.score];
     }
-    else{
-        self.life --;
+    else if((contact.bodyA.categoryBitMask & medicineCategory) == medicineCategory ||
+            (contact.bodyB.categoryBitMask & medicineCategory) == medicineCategory){
+        [self.drugSpriteNode removeFromParent];
+        self.life ++;
         self.lifeLabel.text = [NSString stringWithFormat:@"%ld", self.life];
+    }
+    else if((contact.bodyA.categoryBitMask & drugCategory) == drugCategory ||
+            (contact.bodyB.categoryBitMask & drugCategory) == drugCategory){
+        [self.drugSpriteNode removeFromParent];
+        self.life = 0;
+        self.lifeLabel.text = [NSString stringWithFormat:@"%ld", self.life];
+        self.moving.speed = 0;
+        self.restart = YES;
+    }
+    else{
+        //self.life --;
+        //self.lifeLabel.text = [NSString stringWithFormat:@"%ld", self.life];
        // [self.lifeNodesArr removeObjectAtIndex:self.life];
-        if(self.life <= 0){
-            self.moving.speed = 0;
-            self.restart = YES;
-        }
+    
+        self.moving.speed = 0;
+        self.restart = YES;
+        
     }
     
     
@@ -352,17 +421,22 @@ CGFloat setBirdHead(CGFloat min, CGFloat max, CGFloat value){
     [self.pipes removeAllChildren];
     
     //reset life
-    self.life = 3;
+    self.life --;
+    if(self.life <= 0){
+        self.life = 3;
+        //reset score
+        self.score = 0;
+        self.scoreLabel.text = [NSString stringWithFormat:@"%ld", self.score];
+
+    }
     self.lifeLabel.text = [NSString stringWithFormat:@"%ld",self.life];
 
     //reset the restart flag
-    self.restart = NO;
+        self.restart = NO;
     
-    self.moving.speed = 1;
+        self.moving.speed = 1;
     
-    //reset score
-    self.score = 0;
-    self.scoreLabel.text = [NSString stringWithFormat:@"%ld", self.score];
+    
 }
 
 

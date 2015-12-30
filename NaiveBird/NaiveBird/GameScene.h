@@ -45,4 +45,7 @@
 //to record the score
 @property long score;
 
+//
+@property SKSpriteNode* drugSpriteNode;
+
 @end
